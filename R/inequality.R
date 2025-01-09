@@ -1,21 +1,17 @@
-#' Decomposition of Votes-to-Seats Distortion
+#' Inequality in votes-to-seats conversion
 #'
-#' @description Decomposes the seats-to-votes deviation for each party by means
-#'              of the geographical distribution of electoral support. The deviation
-#'              from proportionality is divided into two fractions: one attributable
-#'              to the electoral system —further separating the mean effect and geographical variance effect—
-#'              and another due to population distribution, which includes
-#'              malapportionment and turnout differential effects. Additionally,
-#'              the function aggregates individual party deviations into an election-wide
-#'              index of deviation from proportionality (the Loosemore-Hanby index).
-#'              This index is also decomposed into components attributed to the
-#'              major causes of deviation from proportionality, along with
-#'              interactions among them.
+#' @description  Computes the votes-to-seats conversion ratios for each combination
+#'               of district and party in order to draw the representational inequality
+#'               (Lorenz) curve of an election (or multiple elections under one electoral
+#'               system). The Representational Inequality index proposed by Kedar,
+#'               Harsgor, and Sheinerman, (2016) is calculated as a system-level
+#'               index based on the area under the curve.
+#'               (Use `plot` on its output to draw the curve.)
 #'
-#' @author Alberto Penades, \email{alberto.penades@@gmail.com}
 #' @author Jose M. Pavia, \email{pavia@@uv.es}
+#' @author Alberto Penades, \email{alberto.penades@@gmail.com}
 #'
-#' @references Penades, A and Pavia, JM. *The decomposition of seats-to-votes distortion in elections: mean, variance, malapportionment and participation*.
+#' @references Kedar, O, Harsgor, L and Sheinerman, RA (2016). Are voters equal under proportional representation? *American Journal of Political Science*, 60(3), 676-691 \doi{10.1111/ajps.12225}
 #'
 #' @param votes A data.frame or matrix of order kxp (where k is the number of constituencies/districts and p the number of parties)
 #'              with the votes gained by each party/candidacy in each constituency/district.
@@ -26,19 +22,16 @@
 #'              with row and columns in the same order as `votes`, with the seats gained by each party/candidacy
 #'              in each constituency/district.
 #'
-#' @param census A vector (matrix or data.frame) of length k (the number of constituencies/districts), with
-#'               components in the same order as the rows in `votes`, with the
-#'               census (overall population entitled to vote) in each constituency/district.
 
 #'
 #' @return
-#' A list with three components
+#' A list with four components
 #'
 #' \itemize{
 #'  \item `inputs`: A list containing all the objects with the values used as arguments by the function.
-#'  \item `district2party.contributions`: A matrix of order kxp with the district contributions to the total seat-to-vote deviation of each party. The sums across columns of this matrix yields the vector of total seat-to-vote deviations.
-#'  \item `party.distortions`: A matrix of order 7xp with the estimates of the distortions at the party level.
-#'  \item `aggregate.distortions`: A matrix of order 7x1 with the Loosemore-Handy index and its decomposition due to parties with and without representation as well as its cumulative decomposition step-by-step into mean effects, variance effects, malapportionment effects and turnout (and interaction) effects.
+#'  \item `conversion.ratios`: A data.frame of order Nx7 (where N <= k*p) with conversion ratios of votes-to-seats for each combination of district and party. The first and second columns identify the district and party, respectively. The third column contains the conversion ratios. The last two columns (which are derived from the forth and fifth columns) present the cumulative proportions of seats and votes, from which the representational inequality curve of the election can be drawn.
+#'  \item `RI`: The estimated Representational Inequality (RI) Index, which equals two times the area between the 45-degree line of perfect equality in votes conversion and the (Lorenz) representational inequality curve.
+#'  \item `other.statistics`: A matrix of order 3x1 with the total election proportions of non-represented, underrepresented and overrepresented votes.
 #' }
 #'
 #' @export
@@ -105,102 +98,81 @@
 #'                                   0L, 0L, 0L, 1L, 1L, 1L, 1L, 3L, 0L, 0L, 0L,
 #'                                   1L, 0L, 1L, 0L, 0L, 1L, 0L, 0L)),
 #'                            class = "data.frame", row.names = c(NA, -52L))
-#'  census.ex <- c(239935L, 559590L, 451021L, 456952L, 255557L, 403142L, 569535L,
-#'                 842042L, 153109L, 112376L, 547396L, 783206L, 407899L, 365063L,
-#'                 397732L, 327008L, 211249L, 310547L, 151099L, 95061L, 309595L,
-#'                 130998L, 238885L, 364127L, 125385L, 241301L, 99408L, 73992L,
-#'                 295410L, 164706L, 3004988L, 304448L, 242148L, 331744L, 413193L,
-#'                 279372L, 731499L, 302293L, 315033L, 548711L, 2744152L, 319222L,
-#'                 153080L, 437592L, 749572L, 551021L, 167030L, 677156L, 283161L,
-#'                 1287981L, 31672L, 25368L)
 #'
-#' example <- distortion(votes.ex, seats.ex, census.ex)
-#' example$party.distortions
+#' example <- inequality(votes.ex, seats.ex)
+#' example$RI
 #'
 
-distortion <- function(votes,
-                       seats,
-                       census
+inequality <- function(votes,
+                       seats
 ){
 
   inputs <- c(as.list(environment()))
   # Tests
   votes <- as.matrix(votes)
   seats <- as.matrix(seats)
-  census <- as.vector(as.matrix(census))
   # sizes
   if (nrow(votes) != nrow(seats))
     stop("The number of constituencies (rows) in 'votes' and 'seats' must be equal.")
   if (ncol(votes) != ncol(seats))
     stop("The number of columns (parties) in 'votes' and 'seats' must be equal.")
-  if (nrow(votes) != length(census))
-    stop("The number of rows (constituencies) in 'votes' and the length of 'census' must be equal.")
   # Positive
   if(min(votes) < 0)
     stop("Non negative values are allowed in `votes`.")
   if(min(seats) < 0)
     stop("Non negative values are allowed in `seats`.")
-  if(min(census) < 0)
-    stop("Non negative values are allowed in `census`.")
-  # Check census
-  if (min(census - rowSums(votes)) < 0)
-    stop("At least in a constituency/district the sum of votes is higher than the population entitled to vote.")
-  # Computation
-  k <- nrow(votes) # number of districts
-  r_j <- census # voters in constituency
-  t_j <- rowSums(votes)/sum(r_j) # turnout
-  m_j <- rowSums(seats) # magnitude
-  S_i <- colSums(seats)/sum(seats) # proportion of seats
-  V_i <- colSums(votes)/sum(votes) # proportion of votes
-  D_i<- S_i - V_i
-  v_ij <- votes/rowSums(votes) # proportion of vote by party-constituency
-  S.ask_i <- V.ask_i <- colSums(v_ij*m_j)/sum(seats)
-  a_j <- r_j/m_j # number of electors per seat in district j
-  A_i <- S_i - S.ask_i # Electoral System effect
-  B_i <- V.ask_i - V_i # Population effect
-  S.2ask_i <- V.2ask_i <- colSums(v_ij)/k
-  d_i <- S_i - S.2ask_i # mean effect
-  e_i <- V.2ask_i - V.ask_i # variance effect
-  f_i <- V.ask_i - colSums(v_ij*r_j)/sum(r_j) # malapportionment
-  g_i <- colSums(v_ij*r_j)/sum(r_j) - V_i # Participation effect
-  ## Outputs
-  district_party.distortions <- seats/sum(seats) - votes/sum(votes)
-  party.distorsions <- rbind(D_i, A_i, d_i, e_i, B_i, f_i, g_i)
-  colnames(party.distorsions) <- colnames(votes)
-  rownames(party.distorsions) <- c("Total deviation, D_i",
-                                   " Electoral system effect, A_i",
-                                   "   Mean effect, d_i",
-                                   "   Variance effect, e_i",
-                                   " Population effect, B_i",
-                                   "   Malapportionment effect, f_i",
-                                   "   Turnout effect, g_i")
 
-  ## Aggregate components
-  D <- 0.5 * sum(abs(D_i))
-  no.rep <- colSums(seats) == 0 # parties without representation
-  Dr <- 0.5 * sum(abs(D_i[!no.rep]))
-  Dwr <- 0.5 * sum(abs(D_i[no.rep]))
-  D.d <- 0.5 * sum(abs(d_i))
-  D.de <- 0.5 * sum(abs(d_i + e_i))
-  D.def <- 0.5 * sum(abs(d_i + e_i + f_i))
-  D.defg <- 0.5 * sum(abs(d_i + e_i + f_i + g_i))
-  aggregate.distorsions <- rbind(D, Dr, Dwr, D.d, D.de, D.def, D.defg)
-  rownames(aggregate.distorsions) <- c("Loosemore-Handy index",
-                                       " Distortion due to parties with representation",
-                                       " Distortion due to parties without representation",
-                                       "Electoral system mean effect on distortion",
-                                       "Electoral system (mean + variance) effect on distortion",
-                                       "Electoral system plus malapportionment effects on distortion",
-                                       "Distortion (including turnout effects and interactions): Loosemore-Handy index"
-                                       )
-  colnames(aggregate.distorsions) <- "Value"
+  # Computation
+  p.seats <- seats/sum(seats)
+  p.votes <- votes/sum(votes)
+  CR_ij <- p.seats / p.votes
+  CR_ij[is.nan(CR_ij)] <- Inf
+
+  # Order of CR_ij
+  CR.ij <- as.vector(CR_ij)
+  ordenados <- order(CR.ij)
+
+  # Rows and columns of ordered values
+  filas.columnas <- arrayInd(ordenados, .dim = dim(CR_ij))
+  cr.order <- CR.ij[ordenados]
+  s.order <- p.seats[ordenados]
+  v.order <- p.votes[ordenados]
+  output <- as.data.frame(cbind(filas.columnas, cr.order, s.order, v.order))
+  output <- output[!is.infinite(output$cr.order), ]
+  if (is.null(rownames(CR_ij))) rownames(CR_ij) <- 1:nrow(CR_ij)
+  output[, 1L] <- rownames(CR_ij)[output[, 1L]]
+  output[, 2L] <- colnames(CR_ij)[output[, 2L]]
+  names(output) <- c("District", "Party", "CR_ij", "Prop.Seats", "Prop.Votes")
+  output <- output[order(output$CR_ij, output$Prop.Seats, output$Prop.Votes), ]
+  Cum.Prop.Seats <- cumsum(output$Prop.Seats)
+  Cum.Prop.Votes <- cumsum(output$Prop.Votes)
+  output <- cbind(output, Cum.Prop.Seats, Cum.Prop.Votes)
+  row.names(output) <- 1:nrow(output)
+  RI <-  sum(Cum.Prop.Votes[-nrow(output)] - Cum.Prop.Seats[-nrow(output)])
+  RI <- RI/sum(Cum.Prop.Votes[-nrow(output)])
+
+  ## Outputs
+  sin.rep <- which(output$CR_ij > 0)[1L] - 1L
+  if (sin.rep == 0){
+    sin.rep <- 0
+  } else {
+    sin.rep <- output$Cum.Prop.Votes[sin.rep]
+  }
+  under <- which(output$CR_ij < 1)
+  under <- output$Cum.Prop.Votes[under[length(under)]]
+  other.statistics <- rbind(sin.rep,
+                            under,
+                            1 - under)
+  rownames(other.statistics) <- c("Non-represented votes",
+                                  "Underrepresented votes",
+                                  "Overrepresented votes")
+  colnames(other.statistics) <- "Proportion"
   output <- list("inputs" = inputs,
-                 "district2party.contributions" = district_party.distortions,
-                 "party.distortions" = party.distorsions,
-                 "aggregate.distortions" = aggregate.distorsions)
-  class(output) <- c("ElectDecomp", "distorsion.ElectDecomp")
+                 "conversion.ratios" = output,
+                 "RI" = RI,
+                 "other.statistics" = other.statistics)
+  class(output) <- c("ElectDecomp", "inequality.ElectDecomp")
 
   return(output)
-
 
 }
